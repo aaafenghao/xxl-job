@@ -31,6 +31,10 @@ public class JobScheduleHelper {
     private Thread ringThread;
     private volatile boolean scheduleThreadToStop = false;
     private volatile boolean ringThreadToStop = false;
+    /**
+     * 秒数--jobIds
+     * 1-60
+     */
     private volatile static Map<Integer, List<Integer>> ringData = new ConcurrentHashMap<>();
 
     public void start(){
@@ -64,13 +68,17 @@ public class JobScheduleHelper {
                         conn = XxlJobAdminConfig.getAdminConfig().getDataSource().getConnection();
                         connAutoCommit = conn.getAutoCommit();
                         conn.setAutoCommit(false);
-
+                        //查询xxl_job_lock表,悲观锁
                         preparedStatement = conn.prepareStatement(  "select * from xxl_job_lock where lock_name = 'schedule_lock' for update" );
                         preparedStatement.execute();
 
                         // tx start
 
                         // 1、pre read
+                        //分成三种情况
+                        //1、下一次触发时间+5s小于当前时间,直接获取下一次有效时间,更新对象属性
+                        //2、下一次触发时间小于当前时间,计算下一次触发时间，计算后的计算时间和当前时间差小于5s,直接加入到ring中
+                        //3、直接加入到ring中
                         long nowTime = System.currentTimeMillis();
                         List<XxlJobInfo> scheduleList = XxlJobAdminConfig.getAdminConfig().getXxlJobInfoDao().scheduleJobQuery(nowTime + PRE_READ_MS);
                         if (scheduleList!=null && scheduleList.size()>0) {
@@ -78,10 +86,12 @@ public class JobScheduleHelper {
                             for (XxlJobInfo jobInfo: scheduleList) {
 
                                 // time-ring jump
+                                //小于当前时间的处理
                                 if (nowTime > jobInfo.getTriggerNextTime() + PRE_READ_MS) {
                                     // 2.1、trigger-expire > 5s：pass && make next-trigger-time
 
                                     // fresh next
+                                    //获取Cron表达式下一个有效时间,在当前时候之后
                                     Date nextValidTime = new CronExpression(jobInfo.getJobCron()).getNextValidTimeAfter(new Date());
                                     if (nextValidTime != null) {
                                         jobInfo.setTriggerLastTime(jobInfo.getTriggerNextTime());
@@ -91,10 +101,10 @@ public class JobScheduleHelper {
                                         jobInfo.setTriggerLastTime(0);
                                         jobInfo.setTriggerNextTime(0);
                                     }
-
+                                 //如果下一次的时间小于当前时间
                                 } else if (nowTime > jobInfo.getTriggerNextTime()) {
                                     // 2.2、trigger-expire < 5s：direct-trigger && make next-trigger-time
-
+                                    //更新下一次时间
                                     CronExpression cronExpression = new CronExpression(jobInfo.getJobCron());
                                     long nextTime = cronExpression.getNextValidTimeAfter(new Date()).getTime();
 
@@ -108,15 +118,18 @@ public class JobScheduleHelper {
 
 
                                     // next-trigger-time in 5s, pre-read again
+                                    //下一次时间和当前时间的差值小于5s后
                                     if (jobInfo.getTriggerNextTime() - nowTime < PRE_READ_MS) {
 
                                         // 1、make ring second
                                         int ringSecond = (int)((jobInfo.getTriggerNextTime()/1000)%60);
 
                                         // 2、push time ring
+                                        //添加到一个Map中
                                         pushTimeRing(ringSecond, jobInfo.getId());
 
                                         // 3、fresh next
+                                        //更新下一次执行的时间
                                         Date nextValidTime = new CronExpression(jobInfo.getJobCron()).getNextValidTimeAfter(new Date(jobInfo.getTriggerNextTime()));
                                         if (nextValidTime != null) {
                                             jobInfo.setTriggerLastTime(jobInfo.getTriggerNextTime());
@@ -133,12 +146,15 @@ public class JobScheduleHelper {
                                     // 2.3、trigger-pre-read：time-ring trigger && make next-trigger-time
 
                                     // 1、make ring second
+                                    // 计算key值,下一次的执行时间/1000对60取余
                                     int ringSecond = (int)((jobInfo.getTriggerNextTime()/1000)%60);
 
                                     // 2、push time ring
+                                    //添加到ringData中
                                     pushTimeRing(ringSecond, jobInfo.getId());
 
                                     // 3、fresh next
+                                    //更新下一次执行时间
                                     Date nextValidTime = new CronExpression(jobInfo.getJobCron()).getNextValidTimeAfter(new Date(jobInfo.getTriggerNextTime()));
                                     if (nextValidTime != null) {
                                         jobInfo.setTriggerLastTime(jobInfo.getTriggerNextTime());
@@ -211,6 +227,7 @@ public class JobScheduleHelper {
 
 
                     // Wait seconds, align second
+                    //花费时间小于1000毫秒的,进行等待
                     if (cost < 1000) {  // scan-overtime, not wait
                         try {
                             // pre-read period: success > scan each second; fail > skip this period;
@@ -238,6 +255,7 @@ public class JobScheduleHelper {
             public void run() {
 
                 // align second
+                //翻译是对齐时间,为啥    ???
                 try {
                     TimeUnit.MILLISECONDS.sleep(1000 - System.currentTimeMillis()%1000 );
                 } catch (InterruptedException e) {
@@ -251,6 +269,8 @@ public class JobScheduleHelper {
                     try {
                         // second data
                         List<Integer> ringItemData = new ArrayList<>();
+                        //获取当前的秒数,然后计算出key,从ring中获取数据,添加到ringItem中
+                        //
                         int nowSecond = Calendar.getInstance().get(Calendar.SECOND);   // 避免处理耗时太长，跨过刻度，向前校验一个刻度；
                         for (int i = 0; i < 2; i++) {
                             List<Integer> tmpData = ringData.remove( (nowSecond+60-i)%60 );
@@ -277,6 +297,7 @@ public class JobScheduleHelper {
                     }
 
                     // next second, align second
+                    //应该是针对从ring中获取数据
                     try {
                         TimeUnit.MILLISECONDS.sleep(1000 - System.currentTimeMillis()%1000);
                     } catch (InterruptedException e) {

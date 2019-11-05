@@ -12,7 +12,7 @@ import java.util.Map;
 
 /**
  * xxl-job executor (for spring)
- *
+ * 从2.0.0开始,添加该类
  * @author xuxueli 2018-11-01 09:24:52
  */
 public class XxlJobSpringExecutor extends XxlJobExecutor implements ApplicationContextAware {
@@ -22,9 +22,11 @@ public class XxlJobSpringExecutor extends XxlJobExecutor implements ApplicationC
     public void start() throws Exception {
 
         // init JobHandler Repository
+        //将包含JobHandler注解的类添加到并发容器中,注解值做key,对象做value,前提是必须注册到Spring容器中
         initJobHandlerRepository(applicationContext);
 
         // refresh GlueFactory
+        //修改GLUEFactory的属性值
         GlueFactory.refreshInstance(1);
 
 

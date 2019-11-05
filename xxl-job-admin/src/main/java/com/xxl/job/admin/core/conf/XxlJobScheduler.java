@@ -42,15 +42,20 @@ public class XxlJobScheduler implements InitializingBean, DisposableBean {
     @Override
     public void afterPropertiesSet() throws Exception {
         // init i18n
+        //初始化国际信息的,一般不看
         initI18n();
 
         // admin registry monitor run
+        // 注册监控运行
+        // 清理掉不能用的执行器,更新目前可用的执行器的信息
         JobRegistryMonitorHelper.getInstance().start();
 
         // admin monitor run
+        //报警,报警信息的维护,任务的重试
         JobFailMonitorHelper.getInstance().start();
 
         // admin-server
+        //初始化配置信息,创建ServletServerHandler
         initRpcProvider();
 
         // start-schedule
@@ -101,6 +106,7 @@ public class XxlJobScheduler implements InitializingBean, DisposableBean {
                 null);
 
         // add services
+        //添加到一个Server data中
         xxlRpcProviderFactory.addService(AdminBiz.class.getName(), null, XxlJobAdminConfig.getAdminConfig().getAdminBiz());
 
         // servlet handler

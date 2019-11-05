@@ -3,7 +3,9 @@ package com.xxl.job.executor.service.jobhandler;
 import com.xxl.job.core.biz.model.ReturnT;
 import com.xxl.job.core.handler.IJobHandler;
 import com.xxl.job.core.handler.annotation.JobHandler;
+import com.xxl.job.core.log.XxlJobFileAppender;
 import com.xxl.job.core.log.XxlJobLogger;
+import com.xxl.job.core.util.ShardingUtil;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
@@ -26,12 +28,17 @@ public class DemoJobHandler extends IJobHandler {
 
 	@Override
 	public ReturnT<String> execute(String param) throws Exception {
+		System.out.println("------------------------------------");
+		System.out.println(XxlJobFileAppender.contextHolder.get());
+		System.out.println(ShardingUtil.getShardingVo().toString());
+		System.out.println("-------------------------------------");
 		XxlJobLogger.log("XXL-JOB, Hello World.");
 
 		for (int i = 0; i < 5; i++) {
 			XxlJobLogger.log("beat at:" + i);
 			TimeUnit.SECONDS.sleep(2);
 		}
+		System.out.println("demoJobHandler handler-----------------");
 		return SUCCESS;
 	}
 

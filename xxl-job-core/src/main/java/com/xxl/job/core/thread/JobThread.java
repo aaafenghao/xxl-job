@@ -95,6 +95,7 @@ public class JobThread extends Thread{
 
     	// init
     	try {
+    		//调用初始化方法,目前是个空实现
 			handler.init();
 		} catch (Throwable e) {
     		logger.error(e.getMessage(), e);
@@ -109,6 +110,8 @@ public class JobThread extends Thread{
             ReturnT<String> executeResult = null;
             try {
 				// to check toStop signal, we need cycle, so wo cannot use queue.take(), instand of poll(timeout)
+				//poll--队列为空,直接返回null
+				//take--队列为空,阻塞等待其他线程signal
 				triggerParam = triggerQueue.poll(3L, TimeUnit.SECONDS);
 				if (triggerParam!=null) {
 					running = true;
@@ -122,12 +125,14 @@ public class JobThread extends Thread{
 
 					// execute
 					XxlJobLogger.log("<br>----------- xxl-job job execute start -----------<br>----------- Param:" + triggerParam.getExecutorParams());
-
+					//对执行超时时间的处理,经测试,FutureTask.get中时间如果为0,会报错,内部有时间和状态相关的判断,所以有这个大于0的这个判断
+					//添加这个超时时间的好处是,对阻塞时间有个预估,经测试,任务还是会正常运行结束
 					if (triggerParam.getExecutorTimeout() > 0) {
 						// limit timeout
 						Thread futureThread = null;
 						try {
 							final TriggerParam triggerParamTmp = triggerParam;
+							//创建一个Future任务,将任务添加到线程中
 							FutureTask<ReturnT<String>> futureTask = new FutureTask<ReturnT<String>>(new Callable<ReturnT<String>>() {
 								@Override
 								public ReturnT<String> call() throws Exception {
@@ -137,6 +142,7 @@ public class JobThread extends Thread{
 							futureThread = new Thread(futureTask);
 							futureThread.start();
 
+							//获取执行结果,有执行的超时时间设置
 							executeResult = futureTask.get(triggerParam.getExecutorTimeout(), TimeUnit.SECONDS);
 						} catch (TimeoutException e) {
 
@@ -149,6 +155,7 @@ public class JobThread extends Thread{
 						}
 					} else {
 						// just execute
+						//当超时时间小于或等于0的时候,直接执行
 						executeResult = handler.execute(triggerParam.getExecutorParams());
 					}
 
@@ -186,6 +193,8 @@ public class JobThread extends Thread{
                     // callback handler info
                     if (!toStop) {
                         // commonm
+						//将回调信息添加到一个链式阻塞队列中
+						//针对回调信息的处理,在服务启动的时候,已经启动该start方法
                         TriggerCallbackThread.pushCallBack(new HandleCallbackParam(triggerParam.getLogId(), triggerParam.getLogDateTim(), executeResult));
                     } else {
                         // is killed
@@ -198,7 +207,7 @@ public class JobThread extends Thread{
 
 		// callback trigger request in queue
 		while(triggerQueue !=null && triggerQueue.size()>0){
-			TriggerParam triggerParam = triggerQueue.poll();
+			TriggerParam triggerParam = triggerQueue.poll();//poll队列没有数据,直接返回
 			if (triggerParam!=null) {
 				// is killed
 				ReturnT<String> stopResult = new ReturnT<String>(ReturnT.FAIL_CODE, stopReason + " [job not executed, in the job queue, killed.]");
@@ -208,7 +217,7 @@ public class JobThread extends Thread{
 
 		// destroy
 		try {
-			handler.destroy();
+			handler.destroy();//是个空实现
 		} catch (Throwable e) {
 			logger.error(e.getMessage(), e);
 		}

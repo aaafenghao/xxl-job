@@ -34,12 +34,13 @@ public class ExecutorRegistryThread {
             logger.warn(">>>>>>>>>>> xxl-job, executor registry config fail, adminAddresses is null.");
             return;
         }
-
+        //守护线程,业务线程不停止,该线程不会停止,会随着JVM的关闭而关闭
         registryThread = new Thread(new Runnable() {
             @Override
             public void run() {
 
                 // registry
+                //当其他线程将toStop改变成true后,能及时感知到,然后不走循环
                 while (!toStop) {
                     try {
                         RegistryParam registryParam = new RegistryParam(RegistryConfig.RegistType.EXECUTOR.name(), appName, address);
@@ -54,12 +55,15 @@ public class ExecutorRegistryThread {
                                     logger.info(">>>>>>>>>>> xxl-job registry fail, registryParam:{}, registryResult:{}", new Object[]{registryParam, registryResult});
                                 }
                             } catch (Exception e) {
+                                //调用admin端异常,如果admin端没有启动,这个地方是不是会一直报错
+                                //然后循环下一次
                                 logger.info(">>>>>>>>>>> xxl-job registry error, registryParam:{}", registryParam, e);
                             }
 
                         }
                     } catch (Exception e) {
                         if (!toStop) {
+
                             logger.error(e.getMessage(), e);
                         }
 
@@ -67,6 +71,8 @@ public class ExecutorRegistryThread {
 
                     try {
                         if (!toStop) {
+                            //我觉得这个更像是一个心跳,30s注册一次,如果注册失败的话,
+                            //进入异常块
                             TimeUnit.SECONDS.sleep(RegistryConfig.BEAT_TIMEOUT);
                         }
                     } catch (InterruptedException e) {
@@ -77,6 +83,7 @@ public class ExecutorRegistryThread {
                 }
 
                 // registry remove
+                //当循环停止后,进行注册信息的删除,调用admin接口,删除注册信息
                 try {
                     RegistryParam registryParam = new RegistryParam(RegistryConfig.RegistType.EXECUTOR.name(), appName, address);
                     for (AdminBiz adminBiz: XxlJobExecutor.getAdminBizList()) {

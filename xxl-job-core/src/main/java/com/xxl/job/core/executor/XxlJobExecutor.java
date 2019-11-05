@@ -68,21 +68,25 @@ public class XxlJobExecutor  {
     public void start() throws Exception {
 
         // init logpath
+        //检测是否存在目录,文件等
         XxlJobFileAppender.initLogPath(logPath);
 
         // init invoker, admin-client
+        //主要是为了获取代理类对象,对象内部包含了和admin通信的方法
         initAdminBizList(adminAddresses, accessToken);
 
 
         // init JobLogFileCleanThread
+        //设置守护线程,进行日志文件的清理工作
         JobLogFileCleanThread.getInstance().start(logRetentionDays);
 
         // init TriggerCallbackThread
+        //调用initAdmin获取到的,调用admin实现类callback方法,回调失败的会进行重试操作
         TriggerCallbackThread.getInstance().start();
 
         // init executor-server
-        port = port>0?port: NetUtil.findAvailablePort(9999);
-        ip = (ip!=null&&ip.trim().length()>0)?ip: IpUtil.getIp();
+        port = port>0?port: NetUtil.findAvailablePort(9999);//获取可用端口
+        ip = (ip!=null&&ip.trim().length()>0)?ip: IpUtil.getIp();//获取可用IP
         initRpcProvider(ip, port, appName, accessToken);
     }
     public void destroy(){
@@ -114,13 +118,15 @@ public class XxlJobExecutor  {
     private static List<AdminBiz> adminBizList;
     private static Serializer serializer;
     private void initAdminBizList(String adminAddresses, String accessToken) throws Exception {
+        //获取到序列化类
         serializer = Serializer.SerializeEnum.HESSIAN.getSerializer();
         if (adminAddresses!=null && adminAddresses.trim().length()>0) {
             for (String address: adminAddresses.trim().split(",")) {
                 if (address!=null && address.trim().length()>0) {
-
+                    //地址拼接上/api
                     String addressUrl = address.concat(AdminBiz.MAPPING);
 
+                    //通过JDK动态代理,获取到一个代理类对象
                     AdminBiz adminBiz = (AdminBiz) new XxlRpcReferenceBean(
                             NetEnum.NETTY_HTTP,
                             serializer,
@@ -169,14 +175,25 @@ public class XxlJobExecutor  {
         Map<String, String> serviceRegistryParam = new HashMap<String, String>();
         serviceRegistryParam.put("appName", appName);
         serviceRegistryParam.put("address", address);
-
+        //纯创建对象,空构造器
         xxlRpcProviderFactory = new XxlRpcProviderFactory();
-        xxlRpcProviderFactory.initConfig(NetEnum.NETTY_HTTP, Serializer.SerializeEnum.HESSIAN.getSerializer(), ip, port, accessToken, ExecutorServiceRegistry.class, serviceRegistryParam);
+        //赋值操作,参数效验操作
+        xxlRpcProviderFactory.initConfig(NetEnum.NETTY_HTTP,
+                Serializer.SerializeEnum.HESSIAN.getSerializer(),
+                ip,
+                port,
+                accessToken,
+                ExecutorServiceRegistry.class,
+                serviceRegistryParam);
 
-        // add services
+        // add services 添加到一个Map集合中
         xxlRpcProviderFactory.addService(ExecutorBiz.class.getName(), null, new ExecutorBizImpl());
 
         // start
+        //首先获取一个NettyServer实例
+        //注册启动回调--内部包括ExecutorServiceRegistry的start方法,registry方法--一个静态内部类
+        //注册停止回调
+        //调用NettyServer的start方法--这个就是和其他Netty服务端启动差不多
         xxlRpcProviderFactory.start();
 
     }
@@ -237,10 +254,12 @@ public class XxlJobExecutor  {
     // ---------------------- job thread repository ----------------------
     private static ConcurrentMap<Integer, JobThread> jobThreadRepository = new ConcurrentHashMap<Integer, JobThread>();
     public static JobThread registJobThread(int jobId, IJobHandler handler, String removeOldReason){
+        //创建一个job线程,并启动该线程
         JobThread newJobThread = new JobThread(jobId, handler);
         newJobThread.start();
         logger.info(">>>>>>>>>>> xxl-job regist JobThread success, jobId:{}, handler:{}", new Object[]{jobId, handler});
 
+        //如果能获取到原来的jobThread,直接停止
         JobThread oldJobThread = jobThreadRepository.put(jobId, newJobThread);	// putIfAbsent | oh my god, map's put method return the old value!!!
         if (oldJobThread != null) {
             oldJobThread.toStop(removeOldReason);

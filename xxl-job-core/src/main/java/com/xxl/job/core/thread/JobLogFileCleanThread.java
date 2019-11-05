@@ -100,6 +100,7 @@ public class JobLogFileCleanThread {
 
             }
         });
+        //设置成守护线程,为其他线程提供便利
         localThread.setDaemon(true);
         localThread.setName("xxl-job, executor JobLogFileCleanThread");
         localThread.start();
